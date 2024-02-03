@@ -16,12 +16,31 @@ recode_dict = {
 
 
 def main():
+    if len(sys.argv) < 2 or ".zip" not in sys.argv[1] or sys.argv[1] == "-h" or sys.argv[1] == "--help":
+        print(
+"""
+Usage:
+    `python analyze_spendee.py <zip archive exported from spendee> <additional archive> ...`
+
+Will output the new CSV file into `data/new_historical_data.csv`.
+
+Note that exchange rates are computed each call -- so historical data should be locked in.
+""")
+        exit(0)
+
+
     zip_archive_fnames = sys.argv[1:]
     df = parse_new_data(zip_archive_fnames)
     net_expenses = compute_net_expenses(df)
     print(net_expenses)
     print(net_expenses.sum().select("Net (SGD)"))
     df.write_csv("data/new_historical_data.csv")
+    # Not working
+    # summary = df.with_columns(pl.col("Amount (SGD)").abs()) \
+    #         .group_by("Category name").sum() \
+    #         .select(["Category name", "Amount (SGD)"]) \
+    #         .filter(pl.col("Category name") == "Grocieries")
+    # print(summary)
 
 
 def parse_new_data(zip_archive_fnames):

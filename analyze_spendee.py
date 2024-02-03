@@ -5,6 +5,7 @@ import os
 import shutil
 import glob
 import forex_python
+import argparse
 
 from forex_python.converter import CurrencyRates
 exchange_rates = CurrencyRates()
@@ -16,25 +17,40 @@ recode_dict = {
 
 
 def main():
-    if len(sys.argv) < 2 or ".zip" not in sys.argv[1] or sys.argv[1] == "-h" or sys.argv[1] == "--help":
-        print(
-"""
-Usage:
-    `python analyze_spendee.py <zip archive exported from spendee> <additional archive> ...`
 
-Will output the new CSV file into `data/new_historical_data.csv`.
-
-Note that exchange rates are computed each call -- so historical data should be locked in.
-""")
-        exit(0)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--hist", type=str, help="the historical data CSV file", required=False)
+    parser.add_argument('zip_archives', metavar='<ZA>', type=str, nargs='+', help="a list of zip archives to be processed")
+    args = parser.parse_args()
 
 
-    zip_archive_fnames = sys.argv[1:]
+    for za in args.zip_archives:
+        if not za.strip().endswith(".zip"):
+            print("Data should be in ZIP archives!")
+            exit(1)
+
+    if args.hist and not args.hist.strip().endswith(".csv"):
+        print("Historical data should be CSV!")
+        exit(1)
+
+    zip_archive_fnames = args.zip_archives
     df = parse_new_data(zip_archive_fnames)
+
+    if (args.hist):
+        hist_df = pl.read_csv(args.hist)
+        hist_df = hist_df.with_columns(
+           pl.col("Date").str.to_datetime()
+        )
+        print(hist_df)
+        df = pl.concat([df, hist_df])
+        
+        df = df.unique(["Date", "Wallet", "Author", "Amount", "Currency", "Note"])
+    
     net_expenses = compute_net_expenses(df)
+    
     print(net_expenses)
     print(net_expenses.sum().select("Net (SGD)"))
-    df.write_csv("data/new_historical_data.csv")
+    df.write_csv("new_historical_data.csv")
     # Not working
     # summary = df.with_columns(pl.col("Amount (SGD)").abs()) \
     #         .group_by("Category name").sum() \

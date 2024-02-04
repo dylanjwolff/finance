@@ -12,7 +12,8 @@ exchange_rates = CurrencyRates()
 
 base_currency = "SGD"
 recode_dict = {
-    "Taxi /  Rideshare": "Taxi"
+    "Taxi /  Rideshare": "Taxi",
+    "Taxi / Rideshare": "Taxi"
 }
 
 
@@ -44,12 +45,14 @@ def main():
         print(hist_df)
         df = pl.concat([df, hist_df])
         
-        df = df.unique(["Date", "Wallet", "Author", "Amount", "Currency", "Note"])
+        # df = df.unique(["Date", "Wallet", "Author", "Amount", "Currency", "Note"])
+        # print(df.filter(pl.col("Category name").str.contains("Beaut") & pl.col("Labels").str.contains("Share")))
     
     net_expenses = compute_net_expenses(df)
     
     print(net_expenses)
     print(net_expenses.sum().select("Net (SGD)"))
+    (net_expenses.write_csv("net.csv"))
     df.write_csv("new_historical_data.csv")
     # Not working
     # summary = df.with_columns(pl.col("Amount (SGD)").abs()) \
@@ -72,8 +75,6 @@ def parse_new_data(zip_archive_fnames):
             df = pl.read_csv(csv_fname)
             df = df.with_columns(pl.col("Amount").cast(pl.Float64))
             dfs += [df]
-            print(df.dtypes)
-            print(df.columns)
 
     df = pl.concat(dfs)
 
@@ -96,12 +97,16 @@ def parse_new_data(zip_archive_fnames):
     return df
 
 def compute_net_expenses(df):
-    shared = (df.filter(pl.col("Labels").str.contains("Shared")))
-    owed = (df.filter(pl.col("Labels").str.contains("Sugar")))
+    shared = (df.filter(
+        pl.col("Labels").str.contains("Shared") 
+        & ~pl.col("Labels").str.contains("Sugar") 
+        & ~pl.col("Labels").str.contains("Reimburse")))
+
+    owed = (df.filter(pl.col("Labels").str.contains("Sugar") | pl.col("Labels").str.contains("Reimburse")))
 
     shared = shared.with_columns(pl.lit(0.5).alias("Split Ratio"))
     owed = owed.with_columns(pl.lit(1.0).alias("Split Ratio"))
-    print(owed.columns)
+    print(shared.filter(pl.col("Category name").str.contains("Rent")))
 
     totals_shared = pl.concat([shared, owed]) \
         .group_by(["Category name", "Author", "Split Ratio"]) \

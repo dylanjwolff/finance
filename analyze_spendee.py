@@ -4,11 +4,8 @@ import subprocess as sp
 import os
 import shutil
 import glob
-import forex_python
 import argparse
 
-from forex_python.converter import CurrencyRates
-exchange_rates = CurrencyRates()
 
 base_currency = "SGD"
 recode_dict = {
@@ -16,11 +13,18 @@ recode_dict = {
     "Taxi / Rideshare": "Taxi"
 }
 
+exchange_rates = {
+        "USD": {"SGD": 1.35}
+        }
+
 
 def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--hist", type=str, help="the historical data CSV file", required=False)
+    parser.add_argument("--dbs", type=str, help="separate preprocessed DBS CSV file", required=False)
+    parser.add_argument("--label", action="store_true", help="just produce a unified CSV for manual labeling", required=False)
+    parser.add_argument("--load-labeled", type=str, help="input a unified CSV from manual labeling", required=False)
     parser.add_argument('zip_archives', metavar='<ZA>', type=str, nargs='+', help="a list of zip archives to be processed")
     args = parser.parse_args()
 
@@ -34,8 +38,19 @@ def main():
         print("Historical data should be CSV!")
         exit(1)
 
-    zip_archive_fnames = args.zip_archives
-    df = parse_new_data(zip_archive_fnames)
+    if args.dbs and not args.dbs.strip().endswith(".csv"):
+        print("DBS data should be CSV!")
+        exit(1)
+
+    if args.load_labeled and not args.load_labeled.strip().endswith(".csv"):
+        print("labeled data should be CSV!")
+        exit(1)
+
+    if args.load_labeled:
+        df = pl.read_csv(args.load_labeled)
+    else:
+        zip_archive_fnames = args.zip_archives
+        df = parse_new_data(zip_archive_fnames)
 
     if (args.hist):
         hist_df = pl.read_csv(args.hist)
@@ -44,9 +59,19 @@ def main():
         )
         print(hist_df)
         df = pl.concat([df, hist_df])
+    if args.dbs and not args.load_labeled:
+        dbs_df = pl.read_csv(args.dbs, schema_overrides={"Exchange Rate": pl.Float64}).with_columns(
+           pl.col("Date").str.to_datetime(time_zone="UTC")
+        )
+        df = pl.concat([df, dbs_df])
+        print("dbs:")
+        print(df)
         
         # df = df.unique(["Date", "Wallet", "Author", "Amount", "Currency", "Note"])
         # print(df.filter(pl.col("Category name").str.contains("Beaut") & pl.col("Labels").str.contains("Share")))
+    if (args.label):
+        df.write_csv("to_label.csv")
+        exit(0)
     
     net_expenses = compute_net_expenses(df)
     
@@ -86,7 +111,7 @@ def parse_new_data(zip_archive_fnames):
 
     rates = []
     for c in df["Currency"].unique():
-        rates += [(c, exchange_rates.get_rate(c, base_currency))]
+        rates += [(c, exchange_rates[c][base_currency])]
     rates = pl.DataFrame(rates, schema=["Currency", "Exchange Rate"])
 
     df = df.join(rates, on=["Currency"], how="left")
